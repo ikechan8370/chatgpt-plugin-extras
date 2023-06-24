@@ -1,0 +1,4 @@
+/.idea
+data/upload/**
+!data/upload
+__pycache__/
