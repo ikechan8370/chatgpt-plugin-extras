@@ -2,3 +2,4 @@
 data/upload/**
 !data/upload
 __pycache__/
+data/
