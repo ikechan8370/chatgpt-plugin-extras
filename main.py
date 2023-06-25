@@ -1,13 +1,26 @@
 import os
+from uuid import uuid4
 
 import torch
-from transformers import pipeline, BlipProcessor, BlipForConditionalGeneration, BlipForQuestionAnswering
 from PIL import Image
+from controlnet_aux import HEDdetector
+from diffusers import StableDiffusionInstructPix2PixPipeline, EulerAncestralDiscreteScheduler
 from flask import Flask, request, send_file
-from uuid import uuid4
-from controlnet_aux import OpenposeDetector, MLSDdetector, HEDdetector
+from transformers import BlipProcessor, BlipForConditionalGeneration, BlipForQuestionAnswering
+from transformers import pipeline
 
 app = Flask('chatgpt-plugin-extras')
+
+
+class VitGPT2:
+    def __init__(self, device):
+        print(f"Initializing VitGPT2 ImageCaptioning to {device}")
+        self.pipeline = pipeline("image-to-text", model="nlpconnect/vit-gpt2-image-captioning")
+
+    def inference(self, image_path):
+        captions = self.pipeline(image_path)[0]['generated_text']
+        print(f"\nProcessed ImageCaptioning, Input Image: {image_path}, Output Text: {captions}")
+        return captions
 
 
 class ImageCaptioning:
@@ -57,6 +70,7 @@ class Image2Hed:
         print(f"\nProcessed Image2Hed, Input Image: {inputs}, Output Hed: {output_path}")
         return '/result/' + output_filename
 
+
 class Image2Scribble:
     def __init__(self, device):
         print("Initializing Image2Scribble")
@@ -70,6 +84,28 @@ class Image2Scribble:
         print(f"\nProcessed Image2Hed, Input Image: {inputs}, Output Hed: {output_path}")
         return '/result/' + output_filename
 
+class InstructPix2Pix:
+    def __init__(self, device):
+        print(f"Initializing InstructPix2Pix to {device}")
+        self.device = device
+        self.torch_dtype = torch.float16 if 'cuda' in device else torch.float32
+        self.pipe = StableDiffusionInstructPix2PixPipeline.from_pretrained("timbrooks/instruct-pix2pix",
+                                                                           safety_checker=None,
+                                                                           torch_dtype=self.torch_dtype).to(device)
+        self.pipe.scheduler = EulerAncestralDiscreteScheduler.from_config(self.pipe.scheduler.config)
+
+    def inference(self, image_path, text, output_filename):
+        """Change style of image."""
+        print("===>Starting InstructPix2Pix Inference")
+        original_image = Image.open(image_path)
+        image = self.pipe(text, image=original_image, num_inference_steps=40, image_guidance_scale=1.2).images[0]
+        output_path = os.path.join('data', output_filename)
+        image.save(output_path)
+
+        print(f"\nProcessed InstructPix2Pix, Input Image: {image_path}, Instruct Text: {text}, "
+              f"Output Image: {output_path}")
+        return '/result/' + output_path
+
 @app.route('/result/<filename>')
 def get_result(filename):
     file_path = os.path.join('data', filename)
@@ -80,6 +116,8 @@ ic = ImageCaptioning("cpu")
 vqa = VQA("cpu")
 i2h = Image2Hed("cpu")
 i2s = Image2Scribble("cpu")
+# vgic = VitGPT2("cpu")
+# ip2p = InstructPix2Pix("cpu")
 
 @app.route('/image2hed', methods=['POST'])
 def imag2hed():
@@ -90,6 +128,7 @@ def imag2hed():
     output_filename = str(uuid4()) + '.png'
     result = i2h.inference(filepath, output_filename)
     return result
+
 
 @app.route('/image2Scribble', methods=['POST'])
 def image2Scribble():
@@ -108,8 +147,9 @@ def image_caption():
     filename = str(uuid4()) + '.png'
     filepath = os.path.join('data', 'upload', filename)
     file.save(filepath)
-    result = ic.inference(filepath)
-    return result
+    # result1 = vgic.inference(filepath)
+    result2 = ic.inference(filepath)
+    return result2
 
 
 @app.route('/visual-qa', methods=['POST'])
@@ -122,9 +162,16 @@ def visual_qa():
     result = vqa.inference(filepath, question=question)
     return result
 
-
-
-
+@app.route('/instruct-pix2pix', methods=['POST'])
+def InstructPix2Pix():
+    file = request.files['file']  # 获取上传的文件
+    filename = str(uuid4()) + '.png'
+    filepath = os.path.join('data', 'upload', filename)
+    file.save(filepath)
+    output_filename = str(uuid4()) + '.png'
+    question = request.args.get('t')
+    result = ip2p.inference(filepath, question, output_filename)
+    return result
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0')
