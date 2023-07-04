@@ -28,3 +28,9 @@ POST http://127.0.0.1:5000/visual-qa
 Form-Data \
 file: 图片文件 \
 q: 问题
+
+## huggingface版本
+
+https://huggingface.co/spaces/ikechan8370/cp-extra
+
+duplicate部署使用，baseURL为https://<username>-cp-extra.hf.space，用法和上面一样
